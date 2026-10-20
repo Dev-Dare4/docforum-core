@@ -76,6 +76,7 @@ enum ReferralStatus {
   // (the cascade gave up after repeated no-shows) and `declined` (the
   // patient said no) so audit/metrics can tell the three exits apart.
   cancelled
+  waiting_for_specialist
 }
 
 enum OrderStatus {
@@ -542,8 +543,9 @@ model Consultation {
 }
 
 // Phase 3 (issues #5/#65/#66/#67/#68). Snapshot rule (FR-7/FR-8, hard
-// rule 3): `snapshotNotes` is a copy taken at creation, never a live
-// reference — reassign/cancel/cascade never touch it.
+// rule 3): `snapshotNotes` is a copy taken from the consultation when the
+// referred outcome is saved, never a live reference. IntakeForm has no
+// intake fields yet, so its data cannot be copied until issue #1 lands.
 model Referral {
   id                String         @id @default(uuid())
   status            ReferralStatus @default(pending)
@@ -553,10 +555,10 @@ model Referral {
   // loop detection its lineage.
   sourceConsultationId String
   referringDoctorId String
-  // v1 requires a concrete target doctor — the routing rule for "a
-  // specialty, no specific doctor" is an unresolved design gap
-  // (ARCHITECTURE.md §6.1.2, issue #6), not silently defaulted here.
-  targetDoctorId    String
+  // Nullable only while no verified doctor practices targetSpecialtyId;
+  // those referrals have status waiting_for_specialist. Routing when
+  // verified doctors exist remains issue #6.
+  targetDoctorId    String?
   // Optional denormalised label of the target specialty, used by the
   // loop guard and admin views. Not a substitute for issue #23's real
   // per-doctor specialty management.
@@ -592,7 +594,7 @@ model Referral {
   sourceConsultation Consultation  @relation(fields: [sourceConsultationId], references: [id])
   patientProfile     PatientProfile @relation(fields: [patientProfileId], references: [id])
   referringDoctor    DoctorProfile  @relation("ReferralReferringDoctor", fields: [referringDoctorId], references: [id])
-  targetDoctor       DoctorProfile  @relation("ReferralTargetDoctor", fields: [targetDoctorId], references: [id])
+  targetDoctor       DoctorProfile? @relation("ReferralTargetDoctor", fields: [targetDoctorId], references: [id])
   parentReferral     Referral?      @relation("ReferralLineage", fields: [parentReferralId], references: [id])
   childReferrals     Referral[]     @relation("ReferralLineage")
   resultingAppointment Appointment? @relation("ReferralResultingAppointment", fields: [resultingAppointmentId], references: [id])

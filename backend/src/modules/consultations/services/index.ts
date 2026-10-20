@@ -16,7 +16,7 @@ import type { ReferralTargetInput } from '../../referrals/services';
  * a new appointment, not a second row here. */
 export async function createConsultation(
   userId: string,
-  input: { appointmentId: string; outcome?: ConsultationOutcome; notes?: string },
+  input: { appointmentId: string; outcome?: ConsultationOutcome; notes?: string; targetSpecialtyId?: string; targetDoctorId?: string },
 ) {
   const doctor = await doctorsService.getMyDoctorProfile(userId);
 
@@ -33,11 +33,21 @@ export async function createConsultation(
     if (existing) {
       throw new HttpError(409, 'A consultation already exists for this appointment.');
     }
-    return consultationsRepo.createConsultation(tx, {
+    const consultation = await consultationsRepo.createConsultation(tx, {
       appointmentId: input.appointmentId,
       outcome: input.outcome,
       notes: input.notes,
     });
+    if (input.outcome === 'referred' && input.targetSpecialtyId) {
+      const referral = await referralsService.createReferralFromConsultation(tx, {
+        consultationId: consultation.id,
+        referringDoctorId: doctor.id,
+        targetSpecialtyId: input.targetSpecialtyId,
+        targetDoctorId: input.targetDoctorId,
+      });
+      return { ...consultation, referrals: [referral] };
+    }
+    return consultation;
   });
 }
 

@@ -38,3 +38,11 @@ export function findDoctorSpecialties(doctorProfileId: string) {
     include: { specialty: true },
   });
 }
+
+export function findVerifiedDoctorIdsInSpecialty(specialtyId: string) {
+  return prisma.doctorProfile.findMany({
+    where: { verificationStatus: 'verified', specialties: { some: { specialtyId } } },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+  });
+}

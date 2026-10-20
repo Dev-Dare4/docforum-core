@@ -162,7 +162,7 @@ against `tokenVersion` on every `POST /auth/refresh`.
 
 | Method & path | Auth | Body | Notes |
 |---|---|---|---|
-| `POST /consultations` | doctor (own appointment) | `{ appointmentId, outcome?, notes? }` | Issue #4's minimal slice. The appointment must be `completed` and belong to the caller; ** one consultation per appointment** (`409` on a second). `outcome` is `resolved\|referred\lfollow_up_needed`. |
+| `POST /consultations` | doctor (own appointment) | `{ appointmentId, outcome?, notes?, targetSpecialtyId?, targetDoctorId? }` | Issue #5: when outcome is `referred`, creates a referral in the same transaction and copies notes. If no verified doctor practices the specialty, the returned referral has status `waiting_for_specialist`. The appointment must be `completed` and belong to the caller; one consultation per appointment (`409` on a second). |
 | `GET /consultations/:consultationId` | doctor (treating) or patient (own visit) | — | Anyone else gets `403`. |
 | `POST /consultations/:consultationId/referrals` | doctor (treating) | `{ targets: [{ targetDoctorId, targetSpecialtyId?, snapshotNotes }] }` | Issue #66 — atomic all-or-none multi-referral. Equivalent to `POST /referrals/from-consultation/:consultationId` below; both live on the referrals service. |
 

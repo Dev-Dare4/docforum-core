@@ -100,3 +100,8 @@ export async function listDoctorSpecialtyIds(doctorProfileId: string) {
   const specialties = await doctorsRepo.findDoctorSpecialties(doctorProfileId);
   return specialties.map((link) => link.specialtyId);
 }
+
+/** Verified targets for referral routing, kept behind the doctors service boundary. */
+export async function listVerifiedDoctorIdsInSpecialty(specialtyId: string) {
+  return (await doctorsRepo.findVerifiedDoctorIdsInSpecialty(specialtyId)).map((doctor) => doctor.id);
+}

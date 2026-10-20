@@ -188,14 +188,14 @@ Referral
   id
   patient_profile_id (FK -> PatientProfile)
   source_consultation_id (FK -> Consultation, required)
-  referring_doctor_id, target_doctor_id (both FK -> DoctorProfile, required)
+  referring_doctor_id (FK -> DoctorProfile), target_doctor_id (nullable FK -> DoctorProfile)
   target_specialty_id (nullable FK -> Specialty — denormalised label, used
     by the loop guard and admin views; not issue #23's specialty management)
   snapshot_notes [ENCRYPTED — Phase 8 issue #46] (text copy of the referring consultation notes at time of referral — immutable)
   parent_referral_id (nullable self-FK — the referral whose appointment
     produced the consultation this referral came from; this is the chain
     loop detection walks)
-  status (enum: pending|accepted|declined|completed|expired|cancelled)
+  status (enum: waiting_for_specialist|pending|accepted|declined|completed|expired|cancelled)
   no_show_count (Int, default 0), referring_doctor_notified_at (nullable)
   loop_flagged_at (nullable), loop_flag_reason (nullable text)
   cancelled_reason (nullable text)
@@ -205,7 +205,7 @@ Referral
   indexes: patient_profile_id, referring_doctor_id, target_doctor_id,
     status, loop_flagged_at
 ```
-Design note: `snapshot_notes` deliberately duplicates `Consultation.notes`
+Design note: saving a consultation with outcome `referred` creates its referral in the same transaction. If no verified doctor practices the target specialty, it is created without a target doctor and with status `waiting_for_specialist`; if doctors exist, the request must name one (routing remains issue #6). `snapshot_notes` deliberately duplicates `Consultation.notes`
 rather than pointing live at it, so a later edit to the original
 consultation can never silently change what the specialist already acted
 on (PRD hard question 8.1.4). `snapshotIntakeId` from the original design
@@ -429,12 +429,12 @@ surfaces as `deleted_user`.
 3. On success, `Appointment` is created referencing the now-`booked` slot.
 
 ### 5.2 Referral (Phase 3 — issues #5/#7/#65–#68)
-1. Doctor records a `Consultation` against their own **completed** appointment, then creates one or more `Referral`s from it (`POST /referrals`, or the atomic batch `POST /referrals/from-consultation/:id` / `POST /consultations/:id/referrals`) — each target gets its own `snapshot_notes` copy. Multi-referral is a deliberate decision recorded in `docs/adr/0006-multiple-referrals-per-consultation.md`: independent lifecycles born in one transaction, grouped only for presentation. v1 requires a **concrete, verified** `target_doctor_id`; a "specialty, no doctor" referral is the still-open routing gap (§6.1.2), not something this path silently defaults.
-2. Creation is one transaction: gates (own consultation, completed appointment, no self-referral, target verified [+ in specialty], no duplicate target in this consultation), lineage lookup (`parent_referral_id` via consultation → appointment → referral), then the loop walk (PRD §8.1.2 / issue #65) — a repeat doctor/specialty in the chain **flags** the referral for the admin queue rather than blocking it; exceeding the hop limit (`REFERRAL_MAX_HOPS`, default 4) hard-rejects with 422.
+1. Saving a `Consultation` with outcome `referred` creates one `Referral` in the same transaction (`POST /consultations` with `targetSpecialtyId` and optional `targetDoctorId`). Its `snapshot_notes` copies the consultation notes. The older explicit single/batch referral endpoints remain for multi-referral workflows.
+2. Creation validates the caller owns the consultation, verifies the selected doctor and specialty when one is named, records lineage, and applies loop detection (PRD ?8.1.2 / issue #65). A repeated doctor/specialty is flagged for the admin queue; exceeding `REFERRAL_MAX_HOPS` (default 4) is rejected with 422. When no verified doctor practices the specialty, it creates `waiting_for_specialist` with no target doctor.
 3. Patient must **accept** (PRD OQ-3): `POST /referrals/:id/accept` does a conditional `pending → accepted` UPDATE (exactly one concurrent accept wins) and books a real `Appointment` against the target doctor through the appointments service — same `claimOpenSlot` path as a direct booking, `origin: 'referral'`, patient picks the slot, and no re-intake happens because the snapshot travels on the referral. Decline is `pending → declined`, terminal.
 4. The appointment's own status transition then cascades back into the referral inside the same transaction (issue #67): `completed →` referral `completed`; `cancelled →` referral back to `pending` (slot released, re-bookable, same snapshot); `no_show →` count++ and back to `pending`, except at `NO_SHOW_EXPIRY_THRESHOLD` (2) where it becomes `expired` with `referring_doctor_notified_at` set. Every one of these writes is conditional on the referral still being `accepted` and still pointing at that appointment, so a hook firing twice is a no-op.
 5. Admin override (issue #68): `GET /referrals/admin/queue` (stuck/aged/loop-flagged, with a derived reason), reassign a **pending** referral to another verified doctor (target column only — snapshot untouched), cancel a `pending`/`accepted` referral with a reason (closing its live appointment through the appointments service). Reassign and cancel each write an `AuditEvent` (§4.10), readable at `GET /referrals/admin/:id/audit-events`.
-6. The "zero verified doctors in that specialty" dead end (PRD edge case 8.2.2) **cannot be constructed** in v1: a referral cannot exist without naming a verified target doctor (and being verified in the claimed specialty when one is claimed). The specialty-only case — where the patient would wait for *any* specialist — remains the §6.1.2 routing ADR (issue #6), not an implemented "waiting" state.
+6. When no verified doctor practices the target specialty, the referral is visible to the patient with status `waiting_for_specialist`. When verified doctors exist, a specific doctor must be selected; routing among available doctors remains issue #6.
 
 ### 5.3 Order issuance and fulfillment
 1. Specialist issues `Prescription` and/or `LabOrder` from a `Consultation`.
@@ -447,7 +447,7 @@ surfaces as `deleted_user`.
 
 ### 6.1 What do we think would break?
 1. Naive slot booking without the DB-level conditional update in §5.1 — the most likely first bug filed against this repo. **Resolved 2026-09-14:** implemented exactly as designed in §5.1 — see `backend/src/modules/availability/repositories/index.ts` (`claimOpenSlot`) and `backend/src/modules/appointments/services/index.ts` (`bookSlot`, the transaction wrapping it). Integration-tested with real concurrency in `backend/tests/integration/booking.test.mts`.
-2. `Referral.target_doctor_id` left nullable with no fallback assignment logic — referrals to "a specialty" with no specific doctor need a real routing rule (round robin? load-based?) or they'll pile up unassigned. **Re-scoped for v1, 2026-10-17 (Phase 3):** rather than ship a nullable column with no assignment logic (the failure mode this item predicts), `target_doctor_id` is **required** — a referral cannot be created without a concrete, verified target doctor, so nothing can pile up unassigned. The routing ADR for specialty-only referrals is still owed (issue #6) and the gap stays open until it lands; note also that this makes PRD §8.2.2's "zero verified doctors in the specialty" state unreachable-by-construction rather than surfaced as a distinct "waiting for a specialist" state, which is a deliberate scope reduction to flag in review.
+2. Routing when a referral specialty has verified doctors but no specific doctor was selected remains unresolved (issue #6). Issue #5 makes `target_doctor_id` nullable only for the explicit `waiting_for_specialist` state when no verified doctors practice the specialty.
 3. Polymorphic `FulfillmentRecord.order_id` (§4.7) — polymorphic FKs are a known footgun for referential integrity in Postgres. Needs either two separate tables (`PrescriptionFulfillment`, `LabOrderFulfillment`) or a check-constraint + application-level guard. **Current schema sketch is a simplification that should be revisited before implementation**, not treated as final.
 4. JWT refresh rotation without a revocation list — a stolen refresh token has no clean kill switch until this is added.
 5. **Discovered 2026-10-15 while building email verification (Phase 8, issue #34):** the email/SMS provider is still undecided (Phase 6, issue #17), so verification links can't actually be delivered in a hosted environment yet — `backend/src/modules/auth/services/email-dispatcher.ts` is a no-op seam until a provider is integrated. Until then `backend/scripts/mark-email-verified.mjs` is the documented out-of-band path for an operator with DB access. Not a reason to skip the guard: the guard is what makes the flow safe once delivery exists, and shipping it locked-off would just mean shipping it untested.
