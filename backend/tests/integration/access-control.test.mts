@@ -60,6 +60,7 @@ const KNOWN_ROUTES = [
   'POST /orders/consultations',
   'POST /orders/consultations/:consultationId/prescriptions',
   'POST /orders/consultations/:consultationId/lab-orders',
+  'GET /orders/mine',
   'GET /payments/intents/:id',
   'POST /payments/intents/:id/fund',
   'POST /payments/intents/:id/release',
@@ -111,6 +112,7 @@ const ACCESS_MATRIX: MatrixRow[] = [
   { method: 'POST', path: '/orders/consultations', expected: { anon: 401, patient: 403, doctor: 403, facility: 403, admin: 403 } },
   { method: 'POST', path: '/orders/consultations/:consultationId/prescriptions', expected: { anon: 401, patient: 403, doctor: 403, facility: 403, admin: 403 } },
   { method: 'POST', path: '/orders/consultations/:consultationId/lab-orders', expected: { anon: 401, patient: 403, doctor: 403, facility: 403, admin: 403 } },
+  { method: 'GET', path: '/orders/mine', expected: { anon: 401, patient: 200, doctor: 403, facility: 403, admin: 403 } },
 
   // Payments — admin-triggered in v1; wallet-link is facility-only
   { method: 'POST', path: '/payments/wallet-link', expected: { anon: 401, patient: 403, doctor: 403, facility: 400, admin: 403 } },

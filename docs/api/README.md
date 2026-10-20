@@ -166,6 +166,12 @@ against `tokenVersion` on every `POST /auth/refresh`.
 | `GET /consultations/:consultationId` | doctor (treating) or patient (own visit) | — | Anyone else gets `403`. |
 | `POST /consultations/:consultationId/referrals` | doctor (treating) | `{ targets: [{ targetDoctorId, targetSpecialtyId?, snapshotNotes }] }` | Issue #66 — atomic all-or-none multi-referral. Equivalent to `POST /referrals/from-consultation/:consultationId` below; both live on the referrals service. |
 
+## Orders (`/orders`) — `backend/src/modules/orders`
+
+| Method & path | Auth | Notes |
+|---|---|---|
+| `GET /orders/mine` | patient | Returns the caller's prescriptions and lab orders, showing only the latest row in each supersedes chain by default. Add `?includeHistory=true` to include corrected versions. |
+
 ## Referrals (`/referrals`) — `backend/src/modules/referrals`
 
 | Method & path | Auth | Body | Notes |

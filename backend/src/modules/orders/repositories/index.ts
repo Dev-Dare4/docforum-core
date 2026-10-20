@@ -48,3 +48,19 @@ export function findLabOrderExportPage(patientProfileId: string, cursor: string 
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}), include: { result: true },
   });
 }
+
+export function findPrescriptionsForPatient(patientProfileId: string, includeHistory: boolean) {
+  return prisma.prescription.findMany({
+    where: { patientProfileId, ...(includeHistory ? {} : { correctedBy: { is: null } }) },
+    include: { items: true },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  });
+}
+
+export function findLabOrdersForPatient(patientProfileId: string, includeHistory: boolean) {
+  return prisma.labOrder.findMany({
+    where: { patientProfileId, ...(includeHistory ? {} : { correctedBy: { is: null } }) },
+    include: { result: true },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  });
+}

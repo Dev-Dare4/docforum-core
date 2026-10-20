@@ -71,7 +71,7 @@ roadmap. See each phase section below for status and issue links.
 - [ ] `Prescription` + `PrescriptionItem` models, **append-only** (issuance creates a row; corrections use `supersedes_prescription_id` — ARCHITECTURE.md §4.5, hard rule in ARCHITECTURE_ESSENTIALS.md). Tracked as [issue #9](https://github.com/DocForum/docforum-core/issues/9) (High, 200 pts), which also covers `LabOrder`/`LabResult` (same append-only rule).
 - [ ] `LabOrder` + `LabResult` models, same append-only rule — folded into issue #9 above.
 - [ ] Specialist UI: issue prescription/lab order from a consultation. Tracked as [issue #10](https://github.com/DocForum/docforum-core/issues/10) (Medium, 150 pts) — depends on #9.
-- [ ] Patient UI: view active/past orders. Tracked as [issue #11](https://github.com/DocForum/docforum-core/issues/11) (Medium, 150 pts) — depends on #9.
+- [x] Patient endpoint: view active/past orders. Tracked as [issue #11](https://github.com/DocForum/docforum-core/issues/11) (Medium, 150 pts) — depends on #9. **Done:** `GET /orders/mine` returns the patient's latest prescription and lab-order versions by default; `?includeHistory=true` includes superseded versions.
 - [ ] Order expiry/reminder logic (PRD §8.1.3 "orphaned orders" — general case, beyond referrals). Tracked as [issue #12](https://github.com/DocForum/docforum-core/issues/12) (Medium, 150 pts) — depends on #9.
 
 ## Phase 5 — Facilities & fulfillment
