@@ -1,11 +1,14 @@
 node_modules/
 dist/
 build/
-.env
-.env.local
 *.log
 .DS_Store
 # Local Postgres data dirs (embedded-postgres, used for dev/test — see
 # infra/docker/README.md and backend/tests/integration/)
 .devdb/
 *.tsbuildinfo
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
+config.bat
