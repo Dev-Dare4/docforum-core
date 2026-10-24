@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import EmbeddedPostgres from 'embedded-postgres';
+import { encryptField } from '../../src/utils/field-encryption.js';
 
 const BACKEND_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = 5452;
@@ -13,6 +14,8 @@ const runId = Date.now();
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docforum-orders-mine-pg-'));
 const pg = new EmbeddedPostgres({ databaseDir: dataDir, user: 'docforum', password: 'docforum', port: PORT, persistent: false });
 const databaseUrl = `postgresql://docforum:docforum@localhost:${PORT}/docforum_test`;
+const previousEncryptionKey = process.env.FIELD_ENCRYPTION_KEY_V1;
+const previousEncryptionVersion = process.env.FIELD_ENCRYPTION_ACTIVE_VERSION;
 
 type App = ReturnType<typeof import('../../src/app.js').createApp>;
 type Prisma = typeof import('../../src/db/prisma-client.js').prisma;
@@ -25,6 +28,8 @@ describe('GET /orders/mine', () => {
   let otherPatientProfileId: string;
 
   beforeAll(async () => {
+    process.env.FIELD_ENCRYPTION_KEY_V1 = Buffer.alloc(32, 7).toString('base64');
+    process.env.FIELD_ENCRYPTION_ACTIVE_VERSION = 'v1';
     await pg.initialise();
     await pg.start();
     await pg.createDatabase('docforum_test');
@@ -56,6 +61,10 @@ describe('GET /orders/mine', () => {
     await prisma?.$disconnect();
     await pg.stop();
     fs.rmSync(dataDir, { recursive: true, force: true });
+    if (previousEncryptionKey === undefined) delete process.env.FIELD_ENCRYPTION_KEY_V1;
+    else process.env.FIELD_ENCRYPTION_KEY_V1 = previousEncryptionKey;
+    if (previousEncryptionVersion === undefined) delete process.env.FIELD_ENCRYPTION_ACTIVE_VERSION;
+    else process.env.FIELD_ENCRYPTION_ACTIVE_VERSION = previousEncryptionVersion;
   });
 
   it('returns only latest correction versions by default and exposes the full chain on request', async () => {
@@ -90,14 +99,14 @@ describe('GET /orders/mine', () => {
     const oldLabOrder = await prisma.labOrder.create({
       data: {
         consultationId: consultation.id, patientProfileId, orderingDoctorId: doctor.id,
-        facilityProfileId: facility.id, amountStroops: 200n, testType: 'Old panel', notes: 'old notes',
+        facilityProfileId: facility.id, amountStroops: 200n, testType: 'Old panel', notes: encryptField('old notes') ?? null,
       },
     });
     const currentLabOrder = await prisma.labOrder.create({
       data: {
         consultationId: consultation.id, patientProfileId, orderingDoctorId: doctor.id,
-        facilityProfileId: facility.id, amountStroops: 250n, testType: 'Corrected panel', notes: 'current notes',
-        supersedesLabOrderId: oldLabOrder.id,
+        facilityProfileId: facility.id, amountStroops: 250n, testType: 'Corrected panel',
+        supersedesLabOrderId: oldLabOrder.id, notes: encryptField('current notes') ?? null,
       },
     });
 
