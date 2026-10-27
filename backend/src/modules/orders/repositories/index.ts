@@ -58,6 +58,9 @@ export function findLabOrdersForPatient(patientProfileId: string, includeHistory
     where: { patientProfileId, ...(includeHistory ? {} : { correctedBy: { is: null } }) },
     include: { result: true },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  });
+}
+
 export async function patientHasOrders(patientProfileId: string): Promise<boolean> {
   const [prescription, labOrder] = await Promise.all([
     prisma.prescription.findFirst({ where: { patientProfileId }, select: { id: true } }),
